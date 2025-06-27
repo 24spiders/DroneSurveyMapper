@@ -9,14 +9,16 @@ from dronesurveymapper.image.get_metadata import SurveyImagesToSpatial
 from dronesurveymapper.video.video_exif_reader import DJIVideoExifReader
 
 if __name__ == '__main__':
-    # Imagery
-    mapper = SurveyImagesToSpatial(survey_dir='test',
-                                   out_epsg='EPSG:32615')
-    mapper.img_to_geojson(geojson_path='test.geojson')
+    import os
+    os.chdir(r'D:\!Research\01 - Python\DroneSurveyMapper')
+    # # Imagery
+    # mapper = SurveyImagesToSpatial(survey_dir='test',
+    #                                out_epsg='EPSG:32615')
+    # mapper.img_to_geojson(geojson_path='test.geojson')
 
     # Video
-    video_path = 'test.MP4'
-    output_dir = './test/'
+    video_path = 'DJI_20250426143054_0001_T.MP4'
+    output_dir = './DJI_20250426143054_0001_T/'
     VidReader = DJIVideoExifReader(video_path, output_dir)
     VidReader.extract_frames_from_video()
     frames, frame_keys = VidReader.parse_exiftxt()

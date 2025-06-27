@@ -161,3 +161,11 @@ cython_debug/
 *.docx
 /30m_redhouse_orbit_W
 *.MP4
+/30m_whitehouse_orbit_T
+/30m_whitehouse_orbit_W
+/DJI_20250426143054_0001_T
+m30t_camera_calibration.xlsx
+test_dsm.tif
+test_dsm_beaumont.tif
+test_dsm_beaumont.tif.aux.xml
+claude_fix.py

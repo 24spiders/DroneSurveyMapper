@@ -87,13 +87,26 @@ class DJIVideoExifReader():
         df = pd.read_fwf(self.txt_path, header=None, usecols=[0, 2], names=['Variable', 'Value'])
         values_to_remove = ['Protocol', 'Serial Number', 'Model', 'Frame Width', 'Frame Height', 'Frame Rate']
         df = df[~df['Variable'].isin(values_to_remove)]  # Have to do some cleaning so the loop works
+
+        # Get image_height, image_width, and aperture
+        image_height = df[df['Variable'] == 'Image Height']['Value'].iloc[0]
+        image_width = df[df['Variable'] == 'Image Width']['Value'].iloc[0]
+        aperture = df[df['Variable'] == 'Aperture']['Value'].iloc[0]
+
         # Find index where frames start
         frame_starts = [i for i, val in enumerate(df['Variable'].tolist()) if val == 'Sample Time']
         frames = {}
         prev_drone_roll = 0
+        prev_drone_pitch = 0
+
+        # Init
+        ISO_value = 0
 
         for index in frame_starts:
             frame_dict = {}
+            frame_dict['Image Height'] = image_height
+            frame_dict['Image Width'] = image_width
+            frame_dict['Aperture'] = aperture
 
             # sample_time, not highly useful due to the constantly changing format
             sample_time_row = df.iloc[index]
@@ -111,8 +124,12 @@ class DJIVideoExifReader():
             # ISO
             ISO_row = df.iloc[index + 2]
             ISO_variable = ISO_row['Variable']
-            assert ISO_variable == 'ISO', f'Expected ISO but got {ISO_variable} at {index + 2}'
-            ISO_value = ISO_row['Value']
+            try:
+                assert ISO_variable == 'ISO', f'Expected ISO but got {ISO_variable} at {index + 2}'
+                ISO_value = ISO_row['Value']
+            except AssertionError:
+                index -= 1
+                frame_starts[0] -= 1
             frame_dict['ISO'] = ISO_value
 
             # shutter_speed
@@ -149,8 +166,8 @@ class DJIVideoExifReader():
                 next_drone_roll_row_index = df['Variable'].tolist().index('Drone Roll', index + 7)
                 next_drone_roll_row = df.iloc[next_drone_roll_row_index]
                 next_drone_roll_variable = next_drone_roll_row['Variable']
-                assert next_drone_roll_variable == 'Drone Roll', f'Expected Drone Roll but got {drone_roll_variable} at {index + 6}'
-                next_drone_roll_value = drone_roll_row['Value']
+                assert next_drone_roll_variable == 'Drone Roll', f'Expected Drone Roll but got {next_drone_roll_variable} at {index + 6}'
+                next_drone_roll_value = next_drone_roll_row['Value']
                 avg_drone_roll_value = (float(next_drone_roll_value) + float(prev_drone_roll)) / 2
                 frame_dict['Drone Roll'] = avg_drone_roll_value
                 index -= 1  # Increment the index to account for the missing row
@@ -158,16 +175,40 @@ class DJIVideoExifReader():
             # drone_pitch
             drone_pitch_row = df.iloc[index + 7]
             drone_pitch_variable = drone_pitch_row['Variable']
-            assert drone_pitch_variable == 'Drone Pitch', f'Expected Drone Pitch but got {drone_pitch_variable} at {index + 7}'
-            drone_pitch_value = drone_pitch_row['Value']
-            frame_dict['Drone Pitch'] = drone_pitch_value
+            try:
+                assert drone_pitch_variable == 'Drone Pitch', f'Expected Drone Pitch but got {drone_pitch_variable} at {index + 7}'
+                drone_pitch_value = drone_pitch_row['Value']
+                frame_dict['Drone Pitch'] = drone_pitch_value
+                prev_drone_pitch = drone_pitch_value
+            except AssertionError:
+                # If drone pitch is not found, interpolate
+                next_drone_pitch_row_index = df['Variable'].tolist().index('Drone Pitch', index + 8)
+                next_drone_pitch_row = df.iloc[next_drone_pitch_row_index]
+                next_drone_pitch_variable = next_drone_pitch_row['Variable']
+                assert next_drone_pitch_variable == 'Drone Pitch', f'Expected Drone Pitch but got {next_drone_pitch_variable} at {index + 7}'
+                next_drone_pitch_value = next_drone_pitch_row['Value']
+                avg_drone_pitch_value = (float(next_drone_pitch_value) + float(prev_drone_pitch)) / 2
+                frame_dict['Drone Pitch'] = avg_drone_pitch_value
+                index -= 1  # Increment the index to account for the missing row
 
             # drone_yaw
             drone_yaw_row = df.iloc[index + 8]
             drone_yaw_variable = drone_yaw_row['Variable']
-            assert drone_yaw_variable == 'Drone Yaw', f'Expected Drone Yaw but got {drone_yaw_variable} at {index + 8}'
-            drone_yaw_value = drone_yaw_row['Value']
-            frame_dict['Drone Yaw'] = drone_yaw_value
+            try:
+                assert drone_yaw_variable == 'Drone Yaw', f'Expected Drone Yaw but got {drone_yaw_variable} at {index + 8}'
+                drone_yaw_value = drone_yaw_row['Value']
+                frame_dict['Drone Yaw'] = drone_yaw_value
+                prev_drone_yaw = drone_yaw_value
+            except AssertionError:
+                # If drone yaw is not found, interpolate
+                next_drone_yaw_row_index = df['Variable'].tolist().index('Drone Yaw', index + 9)
+                next_drone_yaw_row = df.iloc[next_drone_yaw_row_index]
+                next_drone_yaw_variable = next_drone_yaw_row['Variable']
+                assert next_drone_yaw_variable == 'Drone Yaw', f'Expected Drone Yaw but got {next_drone_yaw_variable} at {index + 8}'
+                next_drone_yaw_value = next_drone_yaw_row['Value']
+                avg_drone_yaw_value = (float(next_drone_yaw_value) + float(prev_drone_yaw)) / 2
+                frame_dict['Drone Yaw'] = avg_drone_yaw_value
+                index -= 1  # Increment the index to account for the missing row
 
             # gps_latitude
             gps_latitude_row = df.iloc[index + 9]
@@ -193,16 +234,40 @@ class DJIVideoExifReader():
             # relative_altitude
             relative_altitude_row = df.iloc[index + 12]
             relative_altitude_variable = relative_altitude_row['Variable']
-            assert relative_altitude_variable == 'Relative Altitude', f'Expected Relative Altitude but got {relative_altitude_variable} at {index + 12}'
-            relative_altitude_value = relative_altitude_row['Value']
-            frame_dict['Relative Altitude'] = relative_altitude_value
+            try:
+                assert relative_altitude_variable == 'Relative Altitude', f'Expected Relative Altitude but got {relative_altitude_variable} at {index + 12}'
+                relative_altitude_value = relative_altitude_row['Value']
+                frame_dict['Relative Altitude'] = relative_altitude_value
+                prev_relative_altitude = relative_altitude_value
+            except AssertionError:
+                # If gimbal pitch is not found, interpolate
+                next_relative_altitude_row_index = df['Variable'].tolist().index('Relative Altitude', index + 13)
+                next_relative_altitude_row = df.iloc[next_relative_altitude_row_index]
+                next_relative_altitude_variable = next_relative_altitude_row['Variable']
+                assert next_relative_altitude_variable == 'Relative Altitude', f'Expected Relative Altitude but got {next_relative_altitude_variable} at {index + 12}'
+                next_relative_altitude_value = next_relative_altitude_row['Value']
+                avg_relative_altitude_value = (float(next_relative_altitude_value) + float(prev_relative_altitude)) / 2
+                frame_dict['Relative Altitude'] = avg_relative_altitude_value
+                index -= 1  # Increment the index to account for the missing row
 
             # gimbal_pitch
             gimbal_pitch_row = df.iloc[index + 13]
             gimbal_pitch_variable = gimbal_pitch_row['Variable']
-            assert gimbal_pitch_variable == 'Gimbal Pitch', f'Expected Gimbal Pitch but got {gimbal_pitch_variable} at {index + 13}'
-            gimbal_pitch_value = gimbal_pitch_row['Value']
-            frame_dict['Gimbal Pitch'] = gimbal_pitch_value
+            try:
+                assert gimbal_pitch_variable == 'Gimbal Pitch', f'Expected Gimbal Pitch but got {gimbal_pitch_variable} at {index + 13}'
+                gimbal_pitch_value = gimbal_pitch_row['Value']
+                frame_dict['Gimbal Pitch'] = gimbal_pitch_value
+                prev_gimbal_pitch = gimbal_pitch_value
+            except AssertionError:
+                # If gimbal pitch is not found, interpolate
+                next_gimbal_pitch_row_index = df['Variable'].tolist().index('Gimbal Pitch', index + 14)
+                next_gimbal_pitch_row = df.iloc[next_gimbal_pitch_row_index]
+                next_gimbal_pitch_variable = next_gimbal_pitch_row['Variable']
+                assert next_gimbal_pitch_variable == 'Gimbal Pitch', f'Expected Gimbal Pitch but got {next_gimbal_pitch_variable} at {index + 13}'
+                next_gimbal_pitch_value = next_gimbal_pitch_row['Value']
+                avg_gimbal_pitch_value = (float(next_gimbal_pitch_value) + float(prev_gimbal_pitch)) / 2
+                frame_dict['Gimbal Pitch'] = avg_gimbal_pitch_value
+                index -= 1  # Increment the index to account for the missing row
 
             # gimbal_yaw
             gimbal_yaw_row = df.iloc[index + 14]
@@ -211,9 +276,24 @@ class DJIVideoExifReader():
                 index += 1
                 gimbal_yaw_row = df.iloc[index + 14]
                 gimbal_yaw_variable = gimbal_yaw_row['Variable']
-            assert gimbal_yaw_variable == 'Gimbal Yaw', f'Expected Gimbal Yaw but got {gimbal_yaw_variable} at {index + 14}'
-            gimbal_yaw_value = gimbal_yaw_row['Value']
-            frame_dict['Gimbal Yaw'] = gimbal_yaw_value
+            try:
+                assert gimbal_yaw_variable == 'Gimbal Yaw', f'Expected Gimbal Yaw but got {gimbal_yaw_variable} at {index + 14}'
+                gimbal_yaw_value = gimbal_yaw_row['Value']
+                frame_dict['Gimbal Yaw'] = gimbal_yaw_value
+                prev_gimbal_yaw = gimbal_yaw_value
+            except AssertionError:
+                # If gimbal yaw is not found, interpolate
+                next_gimbal_yaw_row_index = df['Variable'].tolist().index('Gimbal Yaw', index + 15)
+                next_gimbal_yaw_row = df.iloc[next_gimbal_yaw_row_index]
+                next_gimbal_yaw_variable = next_gimbal_yaw_row['Variable']
+                assert next_gimbal_yaw_variable == 'Gimbal Yaw', f'Expected Gimbal Yaw but got {next_gimbal_yaw_variable} at {index + 14}'
+                next_gimbal_yaw_value = next_gimbal_yaw_row['Value']
+                avg_gimbal_yaw_value = (float(next_gimbal_yaw_value) + float(prev_gimbal_yaw)) / 2
+                frame_dict['Gimbal Yaw'] = avg_gimbal_yaw_value
+                index -= 1  # Increment the index to account for the missing row
+
+            # gimbal_roll
+            frame_dict['Gimbal Roll'] = 0  # Gimbal Roll is very rarely recorded
 
             # gps_date_time
             gps_date_time_row = df.iloc[index + 15]
@@ -241,10 +321,12 @@ class DJIVideoExifReader():
         # Init dataframe
         df = pd.DataFrame(columns=['Image Name', 'Sample Time', 'Sample Duration',
                                    'ISO', 'Shutter Speed', 'F Number',
+                                   'Image Height', 'Image Width', 'Aperture',
                                    'Digital Zoom', 'Drone Roll', 'Drone Pitch',
                                    'Drone Yaw', 'GPS Latitude', 'GPS Longitude',
                                    'Absolute Altitude', 'Relative Altitude',
-                                   'Gimbal Pitch', 'Gimbal Yaw', 'GPS Date/Time'])
+                                   'Gimbal Roll', 'Gimbal Pitch', 'Gimbal Yaw',
+                                   'GPS Date/Time'])
 
         # Iter over frames
         for i, key in enumerate(frames):
@@ -259,6 +341,9 @@ class DJIVideoExifReader():
                    frames[key]['ISO'],
                    frames[key]['Shutter Speed'],
                    frames[key]['F Number'],
+                   frames[key]['Image Height'],
+                   frames[key]['Image Width'],
+                   frames[key]['Aperture'],
                    frames[key]['Digital Zoom'],
                    frames[key]['Drone Roll'],
                    frames[key]['Drone Pitch'],
@@ -267,6 +352,7 @@ class DJIVideoExifReader():
                    lon,
                    frames[key]['Absolute Altitude'],
                    frames[key]['Relative Altitude'],
+                   frames[key]['Gimbal Roll'],
                    frames[key]['Gimbal Pitch'],
                    frames[key]['Gimbal Yaw'],
                    frames[key]['GPS Date/Time']]
